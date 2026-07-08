@@ -1,0 +1,118 @@
+services:
+  web-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bigdata-web-app
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      APP_LOG_FILE: /app/logs/app.log
+      MONGODB_URI: mongodb://admin:admin123@mongodb:27017/demo_ecommerce?authSource=admin
+      MONGODB_DB: demo_ecommerce
+    ports:
+      - "3000:3000"
+    volumes:
+      - app-logs:/app/logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - bigdata-net
+
+  nifi:
+    image: apache/nifi:latest
+    container_name: bigdata-nifi
+    environment:
+      NIFI_WEB_HTTPS_PORT: 8443
+      NIFI_WEB_PROXY_HOST: localhost:8443
+      SINGLE_USER_CREDENTIALS_USERNAME: admin
+      SINGLE_USER_CREDENTIALS_PASSWORD: ChangeMeNifi123!
+    ports:
+      - "8443:8443"
+    volumes:
+      - app-logs:/opt/nifi/app-logs:ro
+    restart: unless-stopped
+    networks:
+      - bigdata-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: bigdata-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    networks:
+      - bigdata-net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: bigdata-clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: analytics_user
+      CLICKHOUSE_PASSWORD: Analytics123!
+    ports:
+      - "8123:8123"
+      - "9002:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    restart: unless-stopped
+    networks:
+      - bigdata-net
+
+  mongodb:
+    image: mongo:7
+    container_name: bigdata-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: demo_ecommerce
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --username admin --password admin123 --authenticationDatabase admin --eval 'db.adminCommand({ ping: 1 }).ok' || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - bigdata-net
+
+networks:
+  bigdata-net:
+    name: bigdata-net
+    driver: bridge
+
+volumes:
+  app-logs:
+    name: app-logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${APP_LOGS_DIR:-/home/adam/Desktop/big-data-app/logs}
+  minio-data:
+    name: minio-data
+  clickhouse-data:
+    name: clickhouse-data
+  mongo-data:
+    name: mongo-data
